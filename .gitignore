@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+ENV/
+
+# Ignore all Swiss Ephemeris data files in their folder
+data/ephe/*
+!data/ephe/README.txt
+
+# Package distributions
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# macOS system files
+.DS_Store
+
+# VSCode settings (optional — if you're not sharing settings)
+.vscode/
+
+# Logs
+*.log
+
+# Static asset caches (if you build CSS/JS)
+node_modules/
+*.cache/
+*.parcel-cache/
+*.next/
+
+# Temporary files
+*.bak
+*.tmp
+*.swp
+
+# Deployment files
+render.yaml  # OPTIONAL: remove this line if you want render.yaml in the repo!
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+# Ignore subscriber data
+subscribers.csv
+
+# Ignore personal dev notes
+/devnotes/
