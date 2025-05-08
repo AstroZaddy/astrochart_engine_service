@@ -1,156 +1,165 @@
-# chart_engine.py
-# Licensed under the GNU GPL v2.0 or later
-# SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2025 Rob Wall
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+chart_engine module: Provides two core functions:
+- build_charts(payload: dict) -> dict
+- next_lunar_phases(input_dt: str or datetime) -> dict
 
+build_charts computes planetary placements, Chiron, mean lunar node, mean apogee (Lilith),
+ASC, MC, DC, IC based on a UTC datetime and location.
+next_lunar_phases finds the next New Moon and Full Moon after a given UTC datetime.
+"""
 import os
 from datetime import datetime
-import pytz
 import swisseph as swe
 
-# Set ephemeris path
-EPHE_PATH = os.path.join(os.path.dirname(__file__), 'sweph')
-swe.set_ephe_path(EPHE_PATH)
+# Initialize ephemeris path
+ephe_path = os.path.join(os.path.dirname(__file__), "sweph")
+swe.set_ephe_path(ephe_path)
 
-def detailed_format(pos):
-    """Return detailed positional data for a celestial body."""
-    lon, lat, dist, speed = pos[0], pos[1], pos[2], pos[3]
-    return {
-        "longitude": round(lon, 6),
-        "latitude": round(lat, 6),
-        "distance_au": round(dist, 6),
-        "speed": round(speed, 6),
-        "retrograde": speed < 0
-    }
 
-def build_chart(birth_data):
+def _parse_datetime(dt_input):
     """
-    Generate core astronomical chart data for a given date, time, and location.
-    Returns planetary longitudes, angles, and retrograde flags.
+    Parse an ISO8601 string ending in 'Z' or a datetime object, returning a naive UTC datetime.
     """
+    if isinstance(dt_input, str):
+        s = dt_input
+        if s.endswith('Z'):
+            s = s[:-1]
+        try:
+            return datetime.fromisoformat(s)
+        except Exception as e:
+            raise ValueError(f"Invalid datetime_utc: '{dt_input}'. Use 'YYYY-MM-DDTHH:MM:SSZ'.") from e
+    elif isinstance(dt_input, datetime):
+        return dt_input
+    else:
+        raise ValueError("datetime_utc must be an ISO8601 string ending in 'Z' or a datetime instance.")
 
-    name = birth_data.get("name", "Unknown")
-    birth_date = birth_data.get("date")
-    birth_time = birth_data.get("time")
-    location = birth_data.get("location", {})
-    lat = location.get("lat", 0.0)
-    lon = location.get("lon", 0.0)
-    tz_str = location.get("timezone", "UTC")
 
-    if lon > 180:
-        lon -= 360
+def build_chart(payload: dict) -> dict:
+    # 1. Parse and validate datetime
+    dt = _parse_datetime(payload.get('datetime_utc', ''))
 
+    # 2. Validate coordinates
     try:
-        dt_local = datetime.strptime(f"{birth_date} {birth_time}", "%Y-%m-%d %H:%M")
-        local_tz = pytz.timezone(tz_str)
-        dt_utc = local_tz.localize(dt_local).astimezone(pytz.utc)
+        lat = float(payload.get('latitude'))
+        if not -90.0 <= lat <= 90.0:
+            raise ValueError
     except Exception:
-        dt_utc = pytz.utc.localize(datetime.strptime(f"{birth_date} 12:00", "%Y-%m-%d %H:%M"))
-
-    jd = swe.julday(
-        dt_utc.year,
-        dt_utc.month,
-        dt_utc.day,
-        dt_utc.hour + dt_utc.minute / 60.0
-    )
-
-    chart = {
-        "name": name,
-        "birth_date": birth_date,
-        "birth_time_local": birth_time,
-        "latitude": lat,
-        "longitude": lon,
-        "timezone": tz_str,
-        "julian_day": jd,
-        "placements": {}
-    }
-
-    # Celestial bodies to include
-    bodies = {
-        "Sun": swe.SUN,
-        "Moon": swe.MOON,
-        "Mercury": swe.MERCURY,
-        "Venus": swe.VENUS,
-        "Mars": swe.MARS,
-        "Jupiter": swe.JUPITER,
-        "Saturn": swe.SATURN,
-        "Uranus": swe.URANUS,
-        "Neptune": swe.NEPTUNE,
-        "Pluto": swe.PLUTO,
-        "North Node": swe.MEAN_NODE,
-        "Chiron": 15,
-        "Lilith": swe.MEAN_APOG,
-    }
-
-    for name, code in bodies.items():
-        pos, _ = swe.calc_ut(jd, code)
-        chart["placements"][name] = detailed_format(pos)
-
-    # South Node = opposite of North Node
-    if "North Node" in chart["placements"]:
-        nn_lon = chart["placements"]["North Node"]["longitude"]
-        sn_lon = (nn_lon + 180) % 360
-        chart["placements"]["South Node"] = {
-            "longitude": round(sn_lon, 6),
-            "latitude": 0.0,  # Not calculated
-            "distance_au": 0.0,  # Not applicable
-            "speed": 0.0,
-            "retrograde": False
-        }
-
-    # House angles
+        raise ValueError(f"Latitude must be between -90 and 90. Got: {payload.get('latitude')}.")
     try:
-        cusps, ascmc = swe.houses(jd, lat, lon, b"P")
-        asc = ascmc[0]
-        mc = ascmc[1]
-        desc = (asc + 180) % 360
-        ic = (mc + 180) % 360
+        lon = float(payload.get('longitude'))
+        if not -180.0 <= lon <= 180.0:
+            raise ValueError
+    except Exception:
+        raise ValueError(f"Longitude must be between -180 and 180. Got: {payload.get('longitude')}.")
 
-        chart["placements"]["Ascendant"] = {
-            "longitude": round(asc, 6),
-            "latitude": 0.0,
-            "distance_au": 0.0,
-            "speed": 0.0,
-            "retrograde": False
-        }
-        chart["placements"]["Midheaven"] = {
-            "longitude": round(mc, 6),
-            "latitude": 0.0,
-            "distance_au": 0.0,
-            "speed": 0.0,
-            "retrograde": False
-        }
-        chart["placements"]["Descendant"] = {
-            "longitude": round(desc, 6),
-            "latitude": 0.0,
-            "distance_au": 0.0,
-            "speed": 0.0,
-            "retrograde": False
-        }
-        chart["placements"]["IC"] = {
-            "longitude": round(ic, 6),
-            "latitude": 0.0,
-            "distance_au": 0.0,
-            "speed": 0.0,
-            "retrograde": False
-        }
-
+    # 3. Compute Julian Day (UT)
+    try:
+        jd = swe.julday(
+            dt.year, dt.month, dt.day,
+            dt.hour + dt.minute/60 + dt.second/3600
+        )
     except Exception as e:
-        chart["error"] = f"Houses/angles could not be calculated: {e}"
+        raise RuntimeError(f"Failed to compute Julian Day: {e}") from e
 
-    return chart
+    # 4. Calculate planetary and minor body placements
+    bodies = [
+        swe.SUN, swe.MOON, swe.MERCURY, swe.VENUS, swe.MARS,
+        swe.JUPITER, swe.SATURN, swe.URANUS, swe.NEPTUNE, swe.PLUTO,
+        swe.CHIRON, swe.MEAN_NODE, swe.MEAN_APOG  # Lilith (mean apogee)
+    ]
+    placements = {}
+    for code in bodies:
+        try:
+            result = swe.calc_ut(jd, code)
+        except Exception as e:
+            name = swe.get_planet_name(code)
+            raise RuntimeError(f"Failed to calculate {name}: {e}") from e
+        # Unpack based on 2-element return (err, data) or direct 4-element tuple
 
-if __name__ == "__main__":
-    test_data = {
-        "name": "Demo",
-        "date": "2025-03-21",
-        "time": "15:30",
-        "location": {
-            "lat": 53.54,
-            "lon": -113.49,
-            "timezone": "America/Edmonton"
+        if isinstance(result, tuple) and len(result) == 2:
+            # (data_array, error_code) in this environment
+            data = result[0]
+            lon_deg, lat_deg, dist, speed = data[0], data[1], data[2], data[3]
+        else:
+            # assume last four values are (lon, lat, dist, speed)
+            lon_deg, lat_deg, dist, speed = result[-4], result[-3], result[-2], result[-1]
+
+            # assume 4-element (lon, lat, dist, speed) or more
+            lon_deg, lat_deg, dist, speed = result[-4], result[-3], result[-2], result[-1]
+        placements[swe.get_planet_name(code)] = {
+            'longitude': lon_deg,
+            'latitude': lat_deg,
+            'distance_au': dist,
+            'speed': speed,
+            'retrograde': speed < 0,
         }
+
+    # 5. Compute house angles: ASC, MC, DC, IC
+    try:
+        cusps, ascmc = swe.houses_ex(jd, lat, lon, b'P')  # 'P' = Placidus house system
+        asc, mc = ascmc[0], ascmc[1]
+        dc = (asc + 180.0) % 360.0
+        ic = (mc + 180.0) % 360.0
+    except Exception as e:
+        raise RuntimeError(f"Failed to compute houses/angles: {e}") from e
+
+    angles = {'Ascendant': asc, 'Midheaven': mc, 'Descendant': dc, 'IC': ic}
+    for name, angle in angles.items():
+        placements[name] = {'longitude': angle, 'latitude': 0.0, 'distance_au': 0.0, 'speed': 0.0, 'retrograde': False}
+
+    # 6. Return the result dict
+    return {
+        'name': payload.get('name'),
+        'datetime_utc': dt.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'latitude': lat,
+        'longitude': lon,
+        'julian_day': jd,
+        'placements': placements,
     }
-    chart = build_chart(test_data)
-    for point, data in chart["placements"].items():
-        print(f"{point}: {data}")
+
+
+def next_lunar_phases(input_dt) -> dict:
+    # Parse datetime
+    dt = _parse_datetime(input_dt)
+    jd_start = swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute/60 + dt.second/3600)
+
+    # Helper to get phase angle
+    def phase_angle(jd):
+        return swe.pheno_ut(jd, swe.MOON)[1]
+
+    # Find a phase crossing (0° for new, 180° for full)
+    def find_phase(jd0, target):
+        prev = phase_angle(jd0)
+        jd1 = jd0
+        while True:
+            jd1 += 1.0
+            curr = phase_angle(jd1)
+            if abs((curr - target + 180) % 360 - 180) < abs((prev - target + 180) % 360 - 180):
+                break
+            prev = curr
+        lo, hi = jd1 - 1.0, jd1
+        while hi - lo > 1e-4:
+            mid = (lo + hi) / 2.0
+            if abs((phase_angle(mid) - target + 180) % 360 - 180) < abs((phase_angle(lo) - target + 180) % 360 - 180):
+                hi = mid
+            else:
+                lo = mid
+        return (lo + hi) / 2.0
+
+    jd_new = find_phase(jd_start, 0.0)
+    jd_full = find_phase(jd_start, 180.0)
+
+    # Convert JD to ISO string
+    def jd_to_iso(jd_val):
+        y, m, d, fr = swe.revjul(jd_val)
+        h = int(fr)
+        mi = int((fr - h) * 60)
+        return datetime(y, m, int(d), h, mi).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    return {
+        'next_new_moon_jd': jd_new,
+        'next_full_moon_jd': jd_full,
+        'next_new_moon': jd_to_iso(jd_new),
+        'next_full_moon': jd_to_iso(jd_full),
+    }
