@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 
-from chart_engine import build_chart, next_lunar_phases
+from chart_engine import build_chart
 
 
 
@@ -50,14 +50,6 @@ class ChartRequest(BaseModel):
     latitude: float
     longitude: float
 
-class LunarPhaseRequest(BaseModel):
-    datetime_utc: str  # ISO 8601 UTC string, e.g. '2025-05-08T00:00:00Z'
-
-class LunarPhaseResponse(BaseModel):
-    next_new_moon_jd: float
-    next_full_moon_jd: float
-    next_new_moon: str
-    next_full_moon: str
 
 # ------------ FastAPI App ------------
 
@@ -101,9 +93,3 @@ async def build_chart_endpoint(req: ChartRequest) -> ChartResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.post("/v1/lunar-phases", response_model=LunarPhaseResponse)
-async def lunar_phases_endpoint(request: LunarPhaseRequest):
-    """
-    Return the next new moon and full moon for a given UTC datetime.
-    """
-    return next_lunar_phases(request.datetime_utc)
