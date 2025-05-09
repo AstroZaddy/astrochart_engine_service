@@ -13,8 +13,8 @@ env/
 ENV/
 
 # Ignore all Swiss Ephemeris data files in their folder
-chart_engine/sweph/*
-!chart_engine/sweph/README.txt
+# chart_engine/sweph/*
+# !chart_engine/sweph/README.txt
 
 # Package distributions
 *.egg
