@@ -147,8 +147,8 @@ def next_lunar_phases(input_dt) -> dict:
                 lo = mid
         return (lo + hi) / 2.0
 
-    jd_new = find_phase(jd_start, 0.0)
-    jd_full = find_phase(jd_start, 180.0)
+    jd_new  = swe.next_new_moon(jd_start)
+    jd_full = swe.next_full_moon(jd_start)
 
     # Convert JD to ISO string
     def jd_to_iso(jd_val):
