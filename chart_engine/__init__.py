@@ -120,37 +120,68 @@ def build_chart(payload: dict) -> dict:
 
 
 def next_lunar_phases(input_dt) -> dict:
-    # Parse datetime
+    """
+    Accepts a datetime or ISO8601 string ending in 'Z'.
+    Returns the next New Moon and Full Moon Julian Days and ISO dates.
+    """
     dt = _parse_datetime(input_dt)
-    jd_start = swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute/60 + dt.second/3600)
+    jd0 = swe.julday(
+        dt.year, dt.month, dt.day,
+        dt.hour + dt.minute/60 + dt.second/3600
+    )
 
-    # Helper to get phase angle
     def phase_angle(jd):
-        return swe.pheno_ut(jd, swe.MOON)[1]
+        # pheno_ut returns (phase_fraction, phase_angle, ... )
+        pa = swe.pheno_ut(jd, swe.MOON)[1]
+        # normalize to [0,360)
+        return pa % 360
 
-    # Find a phase crossing (0° for new, 180° for full)
-    def find_phase(jd0, target):
-        prev = phase_angle(jd0)
-        jd1 = jd0
+    def find_next(target, jd_start):
+        """
+        Find the next time phase_angle crosses target (0 or 180)
+        in the forward direction, then refine by binary search.
+        """
+        # initial value
+        prev = phase_angle(jd_start)
+        jd = jd_start
+
+        # Step forward in 0.5‑day increments until we bracket the crossing
         while True:
-            jd1 += 1.0
-            curr = phase_angle(jd1)
-            if abs((curr - target + 180) % 360 - 180) < abs((prev - target + 180) % 360 - 180):
-                break
-            prev = curr
-        lo, hi = jd1 - 1.0, jd1
-        while hi - lo > 1e-4:
-            mid = (lo + hi) / 2.0
-            if abs((phase_angle(mid) - target + 180) % 360 - 180) < abs((phase_angle(lo) - target + 180) % 360 - 180):
-                hi = mid
+            jd += 0.5
+            curr = phase_angle(jd)
+            if target == 180:
+                # full moon: look for prev <180 <= curr
+                if prev < 180 <= curr:
+                    break
             else:
-                lo = mid
-        return (lo + hi) / 2.0
+                # new moon: look for wrap from >180 to <180
+                # i.e. prev > 180 and curr < 180
+                if prev > 180 and curr < 180:
+                    break
+            prev = curr
 
-    jd_new  = swe.next_new_moon(jd_start)
-    jd_full = swe.next_full_moon(jd_start)
+        # Now refine between jd-0.5 and jd
+        lo, hi = jd - 0.5, jd
+        while hi - lo > 1e-4:
+            mid = (lo + hi) / 2
+            m = phase_angle(mid)
+            if target == 180:
+                if m < 180:
+                    lo = mid
+                else:
+                    hi = mid
+            else:
+                # new moon: we want the moment it drops below 180
+                if m > 180:
+                    lo = mid
+                else:
+                    hi = mid
 
-    # Convert JD to ISO string
+        return (lo + hi) / 2
+
+    jd_full = find_next(180.0, jd0)
+    jd_new  = find_next(0.0,   jd0)
+
     def jd_to_iso(jd_val):
         y, m, d, fr = swe.revjul(jd_val)
         h = int(fr)
@@ -158,8 +189,8 @@ def next_lunar_phases(input_dt) -> dict:
         return datetime(y, m, int(d), h, mi).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     return {
-        'next_new_moon_jd': jd_new,
-        'next_full_moon_jd': jd_full,
-        'next_new_moon': jd_to_iso(jd_new),
-        'next_full_moon': jd_to_iso(jd_full),
+        "next_new_moon_jd": jd_new,
+        "next_full_moon_jd": jd_full,
+        "next_new_moon": jd_to_iso(jd_new),
+        "next_full_moon": jd_to_iso(jd_full),
     }
